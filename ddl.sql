@@ -250,6 +250,38 @@ IS
         commit;
     END insert_into_dim_terminals_hist;
     
+    /* Проверяем есть ли запись с таким id  таблице терминалов */
+    function is_new_terminal_id(terminal_id_in IN dim_terminals_hist.terminal_id%TYPE)
+    return BOOLEAN
+    IS
+    rec_count number;
+    BEGIN
+        select count(*) into rec_count 
+        from dim_terminals_hist
+        where terminal_id = terminal_id_in;
+        
+        return rec_count = 0;
+    END is_new_terminal_id;
+    
+    /* Проверяем изменилась ли запись с таким id в таблице терминалов
+    TRUE - данные обновились
+    FALSE - данные не обновлялись*/
+    function was_terminal_data_update(terminal_rec_in IN dim_terminals_hist%ROWTYPE)
+    return BOOLEAN
+    IS
+    change_flag number;
+    BEGIN
+        select count(*) into change_flag 
+        from dim_terminals_hist
+        where terminal_id = terminal_rec_in.terminal_id
+        and terminal_type = terminal_rec_in.terminal_type
+        and terminal_city = terminal_rec_in.terminal_city
+        and terminal_address = terminal_rec_in.terminal_address
+        and end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
+        
+        return change_flag = 0;
+    END was_terminal_data_update;
+    
     /* Загрузка данных из STG в dim_terminals_hist */
     procedure load_data_into_dim_terminals
     IS
@@ -262,28 +294,13 @@ IS
                 , DEFAULT_MAX_DATE end_dt
         from stg_transactions st
         order by start_dt; -- чтобы проверять в порядке увеличения даты транзакции
-
-    row_cnt number;
-    change_flag number;
     BEGIN   
         for rec in stg_terminals_cur loop
-            -- узнаем есть ли записи с таким id
-            select count(*) into row_cnt 
-            from dim_terminals_hist dth
-            where dth.terminal_id = rec.terminal_id;
             
-            if row_cnt = 0 then -- если нет такой записи, вставляем
+            if is_new_terminal_id(rec.terminal_id) then -- если нет такой записи, вставляем
                 insert_into_dim_terminals_hist(rec);            
             else --если есть, проверим были ли изменения
-                select count(*) into change_flag 
-                from dim_terminals_hist dth
-                where dth.terminal_id = rec.terminal_id
-                and dth.terminal_type = rec.terminal_type
-                and dth.terminal_city = rec.terminal_city
-                and dth.terminal_address = rec.terminal_address
-                and dth.end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
-                
-                if change_flag = 0 then -- запись не найдена, т.е. изменилась
+                if was_terminal_data_update(rec) then -- запись изменилась
                     -- update текущей записи - делаем ее исторической
                     update dim_terminals_hist
                     set end_dt = rec.start_dt - ONE_SECOND_INTERVAL -- чтобы не было разночтения при определении принадлежности к интервалу вычтем 1 сек из end_dt
@@ -292,8 +309,7 @@ IS
                     
                     -- insert новой версии записи
                     insert_into_dim_terminals_hist(rec);
-                end if;
-                
+                end if;          
             end if;
     
         end loop;
@@ -307,6 +323,42 @@ IS
                 values client_row;
         commit;
     END insert_into_dim_clients_hist;
+    
+    /* Проверяем есть ли запись с таким id  таблице клиентов */
+    function is_new_client_id(client_id_in IN dim_clients_hist.client_id%TYPE)
+    return BOOLEAN
+    IS
+    rec_count number;
+    BEGIN
+        select count(*) into rec_count 
+        from dim_clients_hist
+        where client_id = client_id_in;
+        
+        return rec_count = 0;
+    END is_new_client_id;
+    
+    /* Проверяем изменилась ли запись с таким id в таблице клиентов
+    TRUE - данные обновились
+    FALSE - данные не обновлялись*/
+    function was_client_data_update(client_rec_in IN dim_clients_hist%ROWTYPE)
+    return BOOLEAN
+    IS
+    change_flag number;
+    BEGIN
+        select count(*) into change_flag 
+        from dim_clients_hist
+        where client_id = client_rec_in.client_id
+        and last_name = client_rec_in.last_name
+        and first_name = client_rec_in.first_name
+        and patronymic = client_rec_in.patronymic
+        and date_of_birth = client_rec_in.date_of_birth
+        and passport_num = client_rec_in.passport_num
+        and passport_valid_to = client_rec_in.passport_valid_to
+        and phone = client_rec_in.phone
+        and end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
+        
+        return change_flag = 0;
+    END was_client_data_update;
     
     /* Загрузка данных из STG в dim_clients_hist */
     procedure load_data_into_dim_clients
@@ -324,32 +376,13 @@ IS
                 , DEFAULT_MAX_DATE end_dt
         from stg_transactions st
         order by start_dt; -- чтобы проверять в порядке увеличения даты транзакции     
-        
-    row_cnt number;
-    change_flag number;
     BEGIN   
         for rec in stg_clients_cur loop
-            -- узнаем есть ли записи с таким id
-            select count(*) into row_cnt 
-            from dim_clients_hist dch
-            where dch.client_id = rec.client_id;
             
-            if row_cnt = 0 then -- если нет такой записи, вставляем
+            if is_new_client_id(rec.client_id) then -- если нет такой записи, вставляем
                 insert_into_dim_clients_hist(rec);            
             else --если есть, проверим были ли изменения
-                select count(*) into change_flag 
-                from dim_clients_hist dch
-                where dch.client_id = rec.client_id
-                and dch.last_name = rec.last_name
-                and dch.first_name = rec.first_name
-                and dch.patronymic = rec.patronymic
-                and dch.date_of_birth = rec.date_of_birth
-                and dch.passport_num = rec.passport_num
-                and dch.passport_valid_to = rec.passport_valid_to
-                and dch.phone = rec.phone
-                and dch.end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
-                
-                if change_flag = 0 then -- запись не найдена, т.е. изменилась
+                if was_client_data_update(rec) then -- запись изменилась
                     -- update текущей записи - делаем ее исторической
                     update dim_clients_hist
                     set end_dt = rec.start_dt - ONE_SECOND_INTERVAL
@@ -358,8 +391,7 @@ IS
                     
                     -- insert новой версии записи
                     insert_into_dim_clients_hist(rec);
-                end if;
-                
+                end if;  
             end if;
     
         end loop;
@@ -374,6 +406,37 @@ IS
         commit;
     END insert_into_dim_accounts_hist;
     
+    /* Проверяем есть ли запись с таким id  таблице счетов */
+    function is_new_acc_num(account_num_in IN dim_accounts_hist.account_num%TYPE)
+    return BOOLEAN
+    IS
+    rec_count number;
+    BEGIN
+        select count(*) into rec_count 
+        from dim_accounts_hist
+        where account_num = account_num_in;
+        
+        return rec_count = 0;
+    END is_new_acc_num;
+    
+    /* Проверяем изменилась ли запись с таким id в таблице счетов
+    TRUE - данные обновились
+    FALSE - данные не обновлялись*/
+    function was_acc_data_update(acc_rec_in IN dim_accounts_hist%ROWTYPE)
+    return BOOLEAN
+    IS
+    change_flag number;
+    BEGIN
+        select count(*) into change_flag 
+        from dim_accounts_hist
+        where account_num = acc_rec_in.account_num
+        and valid_to = acc_rec_in.valid_to
+        and client_id = acc_rec_in.client_id
+        and end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
+
+        return change_flag = 0;
+    END was_acc_data_update;
+    
     /* Загрузка данных из STG в dim_accounts_hist */
     procedure load_data_into_dim_accounts
     IS  
@@ -385,27 +448,13 @@ IS
                 , DEFAULT_MAX_DATE end_dt
         from stg_transactions st
         order by start_dt; -- чтобы проверять в порядке увеличения даты транзакции     
-        
-    row_cnt number;
-    change_flag number;
     BEGIN   
         for rec in stg_accounts_cur loop
-            -- узнаем есть ли записи с таким num
-            select count(*) into row_cnt 
-            from dim_accounts_hist dah
-            where dah.account_num = rec.account_num;
-            
-            if row_cnt = 0 then -- если нет такой записи, вставляем
+
+            if is_new_acc_num(rec.account_num) then -- если нет такой записи, вставляем
                 insert_into_dim_accounts_hist(rec);            
             else --если есть, проверим были ли изменения
-                select count(*) into change_flag 
-                from dim_accounts_hist dah
-                where dah.account_num = rec.account_num
-                and dah.valid_to = rec.valid_to
-                and dah.client_id = rec.client_id
-                and dah.end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
-                
-                if change_flag = 0 then -- запись не найдена, т.е. изменилась
+                if was_acc_data_update(rec) then -- запись изменилась
                     -- update текущей записи - делаем ее исторической
                     update dim_accounts_hist
                     set end_dt = rec.start_dt - ONE_SECOND_INTERVAL
@@ -415,7 +464,6 @@ IS
                     -- insert новой версии записи
                     insert_into_dim_accounts_hist(rec);
                 end if;              
-
             end if;
     
         end loop;
@@ -430,6 +478,36 @@ IS
         commit;
     END insert_into_dim_cards_hist;
     
+    /* Проверяем есть ли запись с таким id таблице карт */
+    function is_new_card_num(card_num_in IN dim_cards_hist.card_num%TYPE)
+    return BOOLEAN
+    IS
+    rec_count number;
+    BEGIN
+        select count(*) into rec_count 
+        from dim_cards_hist
+        where card_num = card_num_in;
+        
+        return rec_count = 0;
+    END is_new_card_num;
+    
+    /* Проверяем изменилась ли запись с таким id в таблице карт
+    TRUE - данные обновились
+    FALSE - данные не обновлялись*/
+    function was_card_data_update(card_rec_in IN dim_cards_hist%ROWTYPE)
+    return BOOLEAN
+    IS
+    change_flag number;
+    BEGIN
+        select count(*) into change_flag 
+        from dim_cards_hist
+        where card_num = card_rec_in.card_num
+        and account_num = card_rec_in.account_num
+        and end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
+
+        return change_flag = 0;
+    END was_card_data_update;
+    
     /* Загрузка данных из STG в dim_cards_hist */
     procedure load_data_into_dim_cards
     IS 
@@ -440,26 +518,13 @@ IS
                 , DEFAULT_MAX_DATE end_dt
         from stg_transactions st
         order by start_dt; -- чтобы проверять в порядке увеличения даты транзакции     
-         
-    row_cnt number;
-    change_flag number;
     BEGIN   
         for rec in stg_cards_cur loop
-            -- узнаем есть ли записи с таким num
-            select count(*) into row_cnt 
-            from dim_cards_hist dch
-            where dch.card_num = rec.card_num;
-            
-            if row_cnt = 0 then -- если нет такой записи, вставляем
+
+            if is_new_card_num(rec.card_num) then -- если нет такой записи, вставляем
                 insert_into_dim_cards_hist(rec);            
             else --если есть, проверим были ли изменения
-                select count(*) into change_flag 
-                from dim_cards_hist dch
-                where dch.card_num = rec.card_num
-                and dch.account_num = rec.account_num
-                and dch.end_dt = DEFAULT_MAX_DATE; -- ищем изменения в последней версии
-                
-                if change_flag = 0 then -- запись не найдена, т.е. изменилась
+                if was_card_data_update(rec) then -- запись изменилась
                     -- update текущей записи - делаем ее исторической
                     update dim_cards_hist
                     set end_dt = rec.start_dt - ONE_SECOND_INTERVAL
@@ -469,7 +534,6 @@ IS
                     -- insert новой версии записи
                     insert_into_dim_cards_hist(rec);
                 end if;              
-
             end if;
     
         end loop;
@@ -525,11 +589,20 @@ procedure expired_passport_oper;
 procedure expired_account_oper;
 procedure oper_in_different_cities;
 procedure oper_with_select_amount;
+function get_fio(last_name IN dim_clients_hist.last_name%TYPE, first_name IN dim_clients_hist.first_name%TYPE, patronymic IN dim_clients_hist.patronymic%TYPE) return report.fio%TYPE;
 END fraud_transactions_processing;
 /
 
 CREATE OR REPLACE PACKAGE BODY fraud_transactions_processing 
 IS
+    /*Получаем ФИО из Фамилии, имени и отчества*/
+    function get_fio(last_name IN dim_clients_hist.last_name%TYPE, first_name IN dim_clients_hist.first_name%TYPE, patronymic IN dim_clients_hist.patronymic%TYPE)
+    return report.fio%TYPE
+    IS
+    BEGIN
+        return last_name ||' ' || first_name || ' ' || patronymic;
+    END get_fio;
+    
     /* процедура поиска операций с просроченным паспортом */
     procedure expired_passport_oper   
     IS   
@@ -537,7 +610,7 @@ IS
         insert into report(fraud_dt, passport, fio, phone, fraud_type, report_dt)
         select ft.trans_date
             , dclh.passport_num
-            , dclh.last_name ||' ' || dclh.first_name || ' ' || dclh.patronymic as fio
+            , get_fio( dclh.last_name, dclh.first_name, dclh.patronymic) as fio
             , dclh.phone
             , FR_EXPIRED_PASS_TYPE
             , current_timestamp 
@@ -560,7 +633,7 @@ IS
         insert into report(fraud_dt, passport, fio, phone, fraud_type, report_dt)
         select ft.trans_date
             , dclh.passport_num
-            , dclh.last_name ||' ' || dclh.first_name || ' ' || dclh.patronymic as fio
+            , get_fio( dclh.last_name, dclh.first_name, dclh.patronymic) as fio
             , dclh.phone
             , FR_EXPIRED_ACC_TYPE
             , current_timestamp 
@@ -586,7 +659,7 @@ IS
         from (
             select ft.trans_date
                 , dclh.passport_num
-                , dclh.last_name ||' ' || dclh.first_name || ' ' || dclh.patronymic as fio
+                , get_fio( dclh.last_name, dclh.first_name, dclh.patronymic) as fio
                 , dclh.phone
                 , dth.terminal_city
                 , (ft.trans_date - lag(ft.trans_date) over(partition by ft.card_num order by ft.trans_date)) as diff_btwn_opers
@@ -616,7 +689,7 @@ IS
         from (
             select ft.trans_date
                 , dclh.passport_num
-                , dclh.last_name ||' ' || dclh.first_name || ' ' || dclh.patronymic as fio
+                , get_fio( dclh.last_name, dclh.first_name, dclh.patronymic) as fio
                 , dth.terminal_city
                 , dclh.phone
                 ,case -- нам достаточно идти по окну в 4 операции (по условию более 3 операций). Три отказа, 4я успешно:
