@@ -4,3 +4,4 @@
 3. report.sql - скрипт запуска формирования отчета
 4. Upload_data_to_db.ipynb - jupiter-notebook скрипт импорта внешних xlsx-файлов источников в БД
 5. report_data.xlsx - отчет, выгруженный в xlsx-файл
+6. task.pdf - задание
